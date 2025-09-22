@@ -1,0 +1,20 @@
+[package]
+name = "local-secrets"
+version = "0.1.0"
+edition = "2021"
+authors = ["Local Secrets Contributors"]
+description = "Minimalist CLI to store secrets in your OS keyring and inject them into child processes"
+license = "GPL-3.0-only"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.5", features = ["derive"] }
+keyring = "2"
+rpassword = "7"
+secrecy = "0.8"
+zeroize = "1"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+
