@@ -17,3 +17,6 @@ Write commits in the imperative mood (`Add ephemeral injection flag`). Group log
 
 ## Security & Configuration Tips
 Never print secrets in logs or tests; sanitize with `SecretString::expose_secret()` only at the injection boundary. When creating examples, use placeholder names such as `GITHUB_PAT` instead of real tokens. Confirm platform-specific keyring availability before shipping features and document any new environment variables in `README.md`.
+
+## Release Workflow
+Push annotated tags that follow `v*` (for example `git tag -a v0.1.0 -m "Release v0.1.0"`); the CI workflow builds release binaries for Linux (`x86_64-unknown-linux-gnu`), macOS (`aarch64-apple-darwin`), and Windows (`x86_64-pc-windows-msvc`) after linting and tests pass. Artifacts are attached to the GitHub release along with a `SHA256SUMS` manifest. Locally, mirror the release build with `cargo build --release --target <triple>` before tagging, and smoke-test the CLI by running `target/<triple>/release/local-secrets --help`.
