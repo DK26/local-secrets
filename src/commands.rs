@@ -7,6 +7,7 @@ use zeroize::Zeroize;
 use crate::backend::SecretBackend;
 use crate::security::{validate_env_var_name, validate_secret_value};
 
+#[cfg(not(feature = "test-secret-param"))]
 pub fn store(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
     store_with_options(backend, variable, None)
 }
@@ -33,8 +34,7 @@ fn store_with_options(
     // 2. LOCAL_SECRETS_TEST_SECRET environment variable
     // 3. User input prompt
     let secret = if let Some(test_value) = test_secret_override {
-        // Test mode via parameter - use provided secret
-        eprintln!("Enter secret for {}: ", variable);
+        // Test mode via parameter - use provided secret (no prompt needed)
 
         // Security: Validate secret value
         validate_secret_value(test_value)?;
@@ -44,8 +44,7 @@ fn store_with_options(
         test_value_copy.zeroize(); // Zero out the copy from memory
         secret
     } else if let Ok(mut test_secret) = env::var("LOCAL_SECRETS_TEST_SECRET") {
-        // Test mode via environment - use provided secret
-        eprintln!("Enter secret for {}: ", variable);
+        // Test mode via environment - use provided secret (no prompt needed)
 
         // Security: Validate secret value
         validate_secret_value(&test_secret)?;

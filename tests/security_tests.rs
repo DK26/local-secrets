@@ -1,6 +1,5 @@
 use assert_cmd::Command;
 use std::env;
-use tempfile::TempDir;
 
 /// Security-focused integration tests for local-secrets CLI
 /// These tests validate that the CLI properly handles malicious inputs and edge cases
@@ -123,7 +122,7 @@ fn test_command_injection_in_child_process() {
 
 #[test]
 fn test_path_traversal_in_variable_names() {
-    // Test path traversal attempts in variable names for memory backend
+    // Test path traversal attempts in variable names
     let traversal_attempts = vec![
         "../secret",
         "../../etc/passwd",
@@ -244,42 +243,6 @@ fn test_unicode_and_special_characters() {
                 // This is acceptable for security - it means the dangerous input was blocked
                 println!("Special case '{}' blocked at OS level: {}", var_name, e);
             }
-        }
-    }
-}
-
-#[test]
-fn test_memory_backend_file_access_security() {
-    // Test that memory backend doesn't allow unauthorized file access
-    let _temp_dir = TempDir::new().unwrap();
-    let unauthorized_paths = vec![
-        "/etc/passwd",
-        "../../../secret_file",
-        "C:\\Windows\\System32\\config",
-        "/dev/null",
-        "/proc/self/environ",
-    ];
-
-    // Set up memory backend to use our temp directory
-    env::set_var("LOCAL_SECRETS_BACKEND", "memory");
-
-    for path in unauthorized_paths {
-        let mut cmd = Command::cargo_bin("local-secrets").unwrap();
-
-        cmd.env("LOCAL_SECRETS_BACKEND", "memory")
-            .env("LOCAL_SECRETS_TEST_MODE", "1")
-            .env("LOCAL_SECRETS_TEST_SECRET", "secret")
-            .arg("store")
-            .arg(path);
-
-        let output = cmd.output().unwrap();
-
-        // Should not access unauthorized paths
-        if !output.status.success() {
-            println!("Unauthorized path '{}' was properly blocked", path);
-        } else {
-            // If it succeeds, verify it didn't actually access the unauthorized path
-            println!("Path '{}' was handled safely", path);
         }
     }
 }

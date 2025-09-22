@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use mimalloc::MiMalloc;
-use std::env;
 use std::process::ExitCode;
 
 #[global_allocator]
@@ -11,7 +10,7 @@ mod backend;
 mod commands;
 mod security;
 
-use backend::{KeyringBackend, MemoryBackend, SecretBackend};
+use backend::{KeyringBackend, SecretBackend};
 use security::validate_cli_security;
 
 #[derive(Parser)]
@@ -68,23 +67,8 @@ fn main() -> ExitCode {
 fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    // Determine which backend to use
-    let mut backend: Box<dyn SecretBackend> = match env::var("LOCAL_SECRETS_BACKEND").as_deref() {
-        Ok("memory") => {
-            // SECURITY WARNING: Only allow memory backend in test contexts
-            if !cfg!(test) && env::var("LOCAL_SECRETS_TEST_MODE").is_err() {
-                eprintln!("🚨 SECURITY ERROR: MemoryBackend stores secrets in PLAINTEXT!");
-                eprintln!("🚨 This is extremely insecure and should NEVER be used in production!");
-                eprintln!("🚨 To use memory backend for testing, set LOCAL_SECRETS_TEST_MODE=1");
-                eprintln!("🚨 For secure storage, remove LOCAL_SECRETS_BACKEND or use 'keyring'.");
-                return Err(anyhow::anyhow!(
-                    "MemoryBackend rejected for security reasons"
-                ));
-            }
-            Box::new(MemoryBackend::new()?)
-        }
-        _ => Box::new(KeyringBackend::new()),
-    };
+    // Use keyring backend for secure secret storage
+    let mut backend: Box<dyn SecretBackend> = Box::new(KeyringBackend::new());
 
     match cli.command {
         Some(Commands::Store {
@@ -105,16 +89,24 @@ fn run() -> Result<()> {
             commands::delete(&mut *backend, &variable)?;
         }
         None => {
-            // Security validation before execution
-            validate_cli_security(&cli.env, &cli.command_args)?;
+            // Check if command arguments are provided
+            if cli.command_args.is_empty() && cli.env.is_empty() {
+                // No subcommand and no command to run - show help
+                Cli::parse_from(["local-secrets", "--help"]);
+            } else if cli.command_args.is_empty() {
+                anyhow::bail!("No command specified. Provide command arguments after --");
+            } else {
+                // Security validation before execution
+                validate_cli_security(&cli.env, &cli.command_args)?;
 
-            // Run mode - inject environment variables and execute command
-            commands::run_with_env(
-                &mut *backend,
-                &cli.env,
-                cli.no_save_missing,
-                &cli.command_args,
-            )?;
+                // Run mode - inject environment variables and execute command
+                commands::run_with_env(
+                    &mut *backend,
+                    &cli.env,
+                    cli.no_save_missing,
+                    &cli.command_args,
+                )?;
+            }
         }
     }
 

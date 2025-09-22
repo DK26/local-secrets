@@ -1,9 +1,5 @@
 use anyhow::{Context, Result};
 use secrecy::{ExposeSecret, SecretString};
-use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
-use zeroize::Zeroize;
 
 pub trait SecretBackend {
     fn store(&mut self, key: &str, value: &SecretString) -> Result<()>;
@@ -69,99 +65,5 @@ impl SecretBackend for KeyringBackend {
             Err(keyring::Error::NoEntry) => Ok(false),
             Err(err) => Err(err).context("Failed to delete secret from keyring")?,
         }
-    }
-}
-
-pub struct MemoryBackend {
-    file_path: PathBuf,
-}
-
-impl MemoryBackend {
-    pub fn new() -> Result<Self> {
-        // WARNING: MemoryBackend is ONLY for testing - stores secrets in plaintext!
-        // NEVER use LOCAL_SECRETS_BACKEND=memory in production!
-
-        // Verify this is only used in test contexts
-        if !cfg!(test) && std::env::var("LOCAL_SECRETS_TEST_MODE").is_err() {
-            eprintln!("⚠️  WARNING: MemoryBackend stores secrets in PLAINTEXT!");
-            eprintln!("⚠️  This should ONLY be used for testing, not production!");
-            eprintln!("⚠️  Use the default keyring backend for secure storage.");
-        }
-
-        let mut temp_dir = std::env::temp_dir();
-        temp_dir.push("local-secrets-memory-backend.json");
-        Ok(Self {
-            file_path: temp_dir,
-        })
-    }
-
-    fn load_data(&self) -> Result<HashMap<String, String>> {
-        if !self.file_path.exists() {
-            return Ok(HashMap::new());
-        }
-        let content =
-            fs::read_to_string(&self.file_path).context("Failed to read memory backend file")?;
-        if content.trim().is_empty() {
-            return Ok(HashMap::new());
-        }
-        let data: HashMap<String, String> =
-            serde_json::from_str(&content).context("Failed to parse memory backend file")?;
-        Ok(data)
-    }
-
-    fn save_data(&self, data: &HashMap<String, String>) -> Result<()> {
-        let content =
-            serde_json::to_string(data).context("Failed to serialize memory backend data")?;
-        fs::write(&self.file_path, content).context("Failed to write memory backend file")?;
-        Ok(())
-    }
-}
-
-impl SecretBackend for MemoryBackend {
-    fn store(&mut self, key: &str, value: &SecretString) -> Result<()> {
-        // Defensive: Validate inputs before proceeding
-        if key.trim().is_empty() {
-            return Err(anyhow::anyhow!("Key cannot be empty"));
-        }
-        if value.expose_secret().is_empty() {
-            return Err(anyhow::anyhow!("Cannot store empty secret"));
-        }
-
-        let mut data = self.load_data()?;
-        let mut secret_value = value.expose_secret().to_string();
-        data.insert(key.to_string(), secret_value.clone());
-        secret_value.zeroize(); // Zero out the temporary secret copy
-        self.save_data(&data)?;
-        Ok(())
-    }
-
-    fn retrieve(&self, key: &str) -> Result<Option<SecretString>> {
-        // Defensive: Validate input before proceeding
-        if key.trim().is_empty() {
-            return Err(anyhow::anyhow!("Key cannot be empty"));
-        }
-
-        let data = self.load_data()?;
-        match data.get(key) {
-            Some(value) => {
-                let mut value_copy = value.clone();
-                let secret = SecretString::new(value_copy.clone().into());
-                value_copy.zeroize(); // Zero out the temporary copy
-                Ok(Some(secret))
-            }
-            None => Ok(None),
-        }
-    }
-
-    fn delete(&mut self, key: &str) -> Result<bool> {
-        // Defensive: Validate input before proceeding
-        if key.trim().is_empty() {
-            return Err(anyhow::anyhow!("Key cannot be empty"));
-        }
-
-        let mut data = self.load_data()?;
-        let existed = data.remove(key).is_some();
-        self.save_data(&data)?;
-        Ok(existed)
     }
 }

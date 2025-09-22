@@ -112,6 +112,42 @@ match env::var("LOCAL_SECRETS_BACKEND").as_deref() {
 - Don't attempt to "fix" invalid input - report the error clearly
 - Use descriptive error messages that aid in debugging
 
+### Code Quality (ABSOLUTELY MANDATORY)
+- **NEVER use `#[allow(...)]` attributes** - Fix the underlying issue instead
+- **NEVER suppress lints or warnings** - Our CI pipeline has zero tolerance for warnings
+- **Remove unused code** instead of allowing dead code
+- **Fix clippy suggestions** instead of suppressing them
+- All code must pass `cargo clippy -- -D warnings` with ZERO warnings
+- If clippy suggests a change, implement it - clippy knows better than you
+
+### Common Clippy Fixes (Learn These Patterns)
+- **needless_borrows_for_generic_args**: Remove `&` from `&format!()` calls
+  ```rust
+  // ❌ Wrong
+  .contains(&format!("Error: {}", var))
+  
+  // ✅ Correct
+  .contains(format!("Error: {}", var))
+  ```
+- **needless_borrows_for_generic_args**: Remove `&` from slice arguments
+  ```rust
+  // ❌ Wrong
+  .args(&cmd_args)
+  
+  // ✅ Correct  
+  .args(cmd_args)
+  ```
+- **unused_imports**: Remove imports that aren't used
+- **unused_variables**: Prefix with `_` or remove entirely
+  ```rust
+  // ❌ Wrong
+  let output = cmd.output().unwrap();
+  
+  // ✅ Correct
+  let _output = cmd.output().unwrap();
+  ```
+- **dead_code**: Remove functions/structs that aren't used anywhere
+
 ## Testing Guidelines
 **Integration tests are our primary validation method.** Leverage Rust's built-in test framework with `tests/cli.rs` as the primary test suite using `assert_cmd` for real binary execution. Co-locate fast unit tests near the implementation with `#[cfg(test)]` modules only when needed.
 

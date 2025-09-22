@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use std::path::Path;
 
 /// Security validation functions for input sanitization and attack prevention
 /// Based on vulnerability research from similar tools and security best practices.
@@ -30,16 +29,32 @@ pub fn validate_env_var_name(name: &str) -> Result<()> {
         ));
     }
 
-    // Check for command injection patterns
+    // Environment variable names must not start with a number
+    if name.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        return Err(anyhow::anyhow!(
+            "Environment variable name cannot start with a number"
+        ));
+    }
+
+    // Environment variable names must only contain valid characters
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(anyhow::anyhow!(
+            "Environment variable name contains invalid characters (only A-Z, 0-9, _ allowed)"
+        ));
+    }
+
+    // Check for command injection and environment pollution patterns
     let dangerous_patterns = [
         "$(",   // Command substitution
         "`",    // Backtick command substitution
         ";",    // Command separator
         "&",    // Command chaining
         "|",    // Pipe
+        ">",    // Redirection
+        "<",    // Input redirection
         "\\",   // Escape sequences
-        "../",  // Path traversal
-        "..\\", // Windows path traversal
+        "../",  // Environment variable pollution (could confuse shell scripts)
+        "..\\", // Windows environment variable pollution
     ];
 
     for pattern in &dangerous_patterns {
@@ -114,53 +129,6 @@ pub fn validate_secret_value(value: &str) -> Result<()> {
     Ok(())
 }
 
-/// Sanitizes file paths to prevent directory traversal attacks
-pub fn sanitize_path(input_path: &str) -> Result<String> {
-    // Reject obviously malicious paths
-    if input_path.contains("../") || input_path.contains("..\\") {
-        return Err(anyhow::anyhow!("Path contains directory traversal"));
-    }
-
-    // Normalize the path and ensure it doesn't escape
-    let path = Path::new(input_path);
-
-    // Get canonical path if possible, or normalize components
-    let sanitized = if let Ok(canonical) = path.canonicalize() {
-        canonical.to_string_lossy().to_string()
-    } else {
-        // If canonicalize fails (path doesn't exist), manually normalize
-        let mut components = Vec::new();
-        for component in path.components() {
-            match component {
-                std::path::Component::ParentDir => {
-                    if components.is_empty() {
-                        return Err(anyhow::anyhow!("Path attempts to escape root"));
-                    }
-                    components.pop();
-                }
-                std::path::Component::Normal(name) => {
-                    components.push(name.to_string_lossy().to_string());
-                }
-                std::path::Component::CurDir => {
-                    // Skip current directory references
-                }
-                _ => {
-                    // Keep other components (Prefix, RootDir)
-                    components.push(component.as_os_str().to_string_lossy().to_string());
-                }
-            }
-        }
-        components.join(std::path::MAIN_SEPARATOR_STR)
-    };
-
-    // Additional validation on the sanitized path
-    if sanitized.is_empty() {
-        return Err(anyhow::anyhow!("Empty path after sanitization"));
-    }
-
-    Ok(sanitized)
-}
-
 /// Validates command arguments to prevent injection attacks
 pub fn validate_command_args(args: &[String]) -> Result<()> {
     if args.is_empty() {
@@ -201,34 +169,6 @@ pub fn validate_command_args(args: &[String]) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Sanitizes error messages to prevent information disclosure
-pub fn sanitize_error_message(error_msg: &str) -> String {
-    let mut sanitized = error_msg.to_string();
-
-    // Remove common patterns that might leak sensitive information
-    let patterns_to_remove = [
-        // File system paths
-        (r"(?i)/[a-zA-Z0-9/._-]*", "[PATH]"),
-        (r"(?i)[A-Z]:\\[a-zA-Z0-9\\._-]*", "[PATH]"),
-        // Environment variables in error messages
-        (r"(?i)\$[A-Z_][A-Z0-9_]*", "[ENV_VAR]"),
-        // Potential secrets (long base64-like strings)
-        (r"[A-Za-z0-9+/]{20,}={0,2}", "[REDACTED]"),
-        // IP addresses
-        (r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b", "[IP_ADDRESS]"),
-        // URLs
-        (r"https?://[^\s]+", "[URL]"),
-    ];
-
-    for (pattern, replacement) in &patterns_to_remove {
-        if let Ok(re) = regex::Regex::new(pattern) {
-            sanitized = re.replace_all(&sanitized, *replacement).to_string();
-        }
-    }
-
-    sanitized
 }
 
 /// Validates the overall CLI arguments for security issues
@@ -285,13 +225,6 @@ mod tests {
 
         let long_secret = "x".repeat(2_000_000);
         assert!(validate_secret_value(&long_secret).is_err());
-    }
-
-    #[test]
-    fn test_sanitize_path() {
-        assert!(sanitize_path("../etc/passwd").is_err());
-        assert!(sanitize_path("..\\windows\\system32").is_err());
-        assert!(sanitize_path("normal_file.txt").is_ok());
     }
 
     #[test]

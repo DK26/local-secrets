@@ -128,7 +128,7 @@ jobs:
         echo "Then run: cargo clippy --all-targets --all-features -- -D warnings"
 
     - name: Run unit tests
-      run: cargo test --lib --verbose
+      run: cargo test --bins --verbose
       env:
         LOCAL_SECRETS_TEST_MODE: "1"
         LOCAL_SECRETS_BACKEND: "memory"
@@ -140,7 +140,7 @@ jobs:
         LOCAL_SECRETS_BACKEND: "memory"
 
     - name: Test with test-secret-param feature
-      run: cargo test --test automated_store_tests --features test-secret-param --verbose
+      run: cargo test --test store_automation_tests --features test-secret-param --verbose
       env:
         LOCAL_SECRETS_TEST_MODE: "1"
         LOCAL_SECRETS_BACKEND: "memory"

@@ -81,7 +81,7 @@ fn test_keyring_availability() {
 
     run_cmd
         .args(["--env", &test_var, "--"])
-        .args(&cmd_args)
+        .args(cmd_args)
         .env_remove("LOCAL_SECRETS_BACKEND")
         .env_remove("LOCAL_SECRETS_TEST_MODE")
         .timeout(Duration::from_secs(10));
@@ -136,7 +136,7 @@ fn test_keyring_error_handling() {
     let cmd_args = ["echo", "should_not_run"];
 
     cmd.args(["--env", &non_existent_var, "--no-save-missing", "--"])
-        .args(&cmd_args)
+        .args(cmd_args)
         .env_remove("LOCAL_SECRETS_BACKEND") // Use real keyring
         .env_remove("LOCAL_SECRETS_TEST_MODE")
         .env_remove("LOCAL_SECRETS_TEST_SECRET") // No fallback
@@ -203,7 +203,7 @@ fn test_keyring_service_isolation() {
         let cmd_args = ["echo", "retrieved"];
 
         cmd.args(["--env", var, "--"])
-            .args(&cmd_args)
+            .args(cmd_args)
             .env_remove("LOCAL_SECRETS_BACKEND")
             .env_remove("LOCAL_SECRETS_TEST_MODE")
             .timeout(Duration::from_secs(10));
@@ -276,7 +276,7 @@ fn test_keyring_performance() {
 
     run_cmd
         .args(["--env", &test_var, "--"])
-        .args(&cmd_args)
+        .args(cmd_args)
         .env_remove("LOCAL_SECRETS_BACKEND")
         .env_remove("LOCAL_SECRETS_TEST_MODE")
         .timeout(Duration::from_secs(30));
@@ -514,13 +514,13 @@ fn test_test_secret_parameter_with_keyring() {
     // Test: Verify secret was stored by retrieving it
     let mut retrieve_cmd = Command::cargo_bin("local-secrets").unwrap();
     #[cfg(target_os = "windows")]
-    let cmd_args = ["cmd", "/c", "echo %{}%".replace("{}", &test_var)];
+    let cmd_args = ["cmd", "/c", &format!("echo %{}%", test_var)];
     #[cfg(not(target_os = "windows"))]
     let cmd_args = ["sh", "-c", &format!("echo ${}", test_var)];
 
     retrieve_cmd
         .args(["--env", &test_var, "--"])
-        .args(&cmd_args)
+        .args(cmd_args)
         .env_remove("LOCAL_SECRETS_BACKEND")
         .env_remove("LOCAL_SECRETS_TEST_MODE")
         .timeout(Duration::from_secs(10));

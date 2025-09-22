@@ -82,18 +82,15 @@ fn store_then_run_injects_secret_from_keyring_backend() -> Result<(), Box<dyn Er
     let mut store = local_secrets_cmd()?;
     store
         .env_remove(BACKEND_ENV) // Use default keyring backend
-        .env(TEST_SECRET_ENV, "super-secret-token")
         .arg("store")
-        .arg(&test_var);
+        .arg(&test_var)
+        .arg("--test-secret")
+        .arg("super-secret-token");
     store
         .assert()
         .success()
-        .stdout(predicate::str::contains(&format!(
+        .stdout(predicate::str::contains(format!(
             "Stored secret for {}",
-            test_var
-        )))
-        .stderr(predicate::str::contains(&format!(
-            "Enter secret for {}",
             test_var
         )));
 
@@ -104,7 +101,7 @@ fn store_then_run_injects_secret_from_keyring_backend() -> Result<(), Box<dyn Er
         .arg(&helper)
         .arg(&test_var);
 
-    let stderr_pred = predicate::str::contains(&format!("Injecting env vars: [\"{}\"]", test_var))
+    let stderr_pred = predicate::str::contains(format!("Injecting env vars: [\"{}\"]", test_var))
         .and(predicate::str::contains("Enter secret").not());
 
     run.assert()
@@ -145,7 +142,7 @@ fn no_save_missing_requires_secret_each_time() -> Result<(), Box<dyn Error>> {
         .assert()
         .success()
         .stdout(predicate::str::contains("transient-1"))
-        .stderr(predicate::str::contains(&format!(
+        .stderr(predicate::str::contains(format!(
             "Enter secret for missing {}",
             test_var
         )));
@@ -158,8 +155,8 @@ fn no_save_missing_requires_secret_each_time() -> Result<(), Box<dyn Error>> {
         .arg(&helper)
         .arg(&test_var);
 
-    let stderr_pred = predicate::str::contains(&format!("Enter secret for missing {}", test_var))
-        .and(predicate::str::contains(&format!("Stored secret for {}", test_var)).not());
+    let stderr_pred = predicate::str::contains(format!("Enter secret for missing {}", test_var))
+        .and(predicate::str::contains(format!("Stored secret for {}", test_var)).not());
 
     second
         .assert()
@@ -186,13 +183,14 @@ fn delete_removes_secret_from_keyring_backend() -> Result<(), Box<dyn Error>> {
     let mut store = local_secrets_cmd()?;
     store
         .env_remove(BACKEND_ENV) // Use default keyring backend
-        .env(TEST_SECRET_ENV, "initial-token")
         .arg("store")
-        .arg(&test_var);
+        .arg(&test_var)
+        .arg("--test-secret")
+        .arg("initial-token");
     store
         .assert()
         .success()
-        .stdout(predicate::str::contains(&format!(
+        .stdout(predicate::str::contains(format!(
             "Stored secret for {}",
             test_var
         )));
@@ -205,7 +203,7 @@ fn delete_removes_secret_from_keyring_backend() -> Result<(), Box<dyn Error>> {
     delete
         .assert()
         .success()
-        .stdout(predicate::str::contains(&format!("Deleted {}", test_var)));
+        .stdout(predicate::str::contains(format!("Deleted {}", test_var)));
 
     let mut run = local_secrets_cmd()?;
     run.env_remove(BACKEND_ENV) // Use default keyring backend
@@ -216,7 +214,7 @@ fn delete_removes_secret_from_keyring_backend() -> Result<(), Box<dyn Error>> {
 
     run.assert()
         .failure()
-        .stderr(predicate::str::contains(&format!(
+        .stderr(predicate::str::contains(format!(
             "Secret {} not found",
             test_var
         )));
