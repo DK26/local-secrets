@@ -1,0 +1,139 @@
+use anyhow::{Context, Result};
+use secrecy::{ExposeSecret, SecretString};
+use std::env;
+use std::process::Command;
+use zeroize::Zeroize;
+
+use crate::backend::SecretBackend;
+
+pub fn store(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
+    // Defensive: Validate variable name early
+    if variable.trim().is_empty() {
+        return Err(anyhow::anyhow!("Variable name cannot be empty"));
+    }
+
+    // Get the secret value
+    let secret = if let Ok(mut test_secret) = env::var("LOCAL_SECRETS_TEST_SECRET") {
+        // Test mode - use provided secret
+        eprintln!("Enter secret for {}: ", variable);
+        let secret = SecretString::new(test_secret.clone().into());
+        test_secret.zeroize(); // Zero out the test secret from memory
+        secret
+    } else {
+        // Production mode - prompt user
+        eprint!("Enter secret for {}: ", variable);
+        let mut password = rpassword::read_password().context("Failed to read password")?;
+        let secret = SecretString::new(password.clone().into());
+        password.zeroize(); // Zero out the password from memory
+        secret
+    };
+
+    // Store the secret
+    backend
+        .store(variable, &secret)
+        .context("Failed to store secret")?;
+
+    println!("Stored secret for {}.", variable);
+    Ok(())
+}
+
+pub fn delete(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
+    // Defensive: Validate variable name early
+    if variable.trim().is_empty() {
+        return Err(anyhow::anyhow!("Variable name cannot be empty"));
+    }
+
+    let existed = backend
+        .delete(variable)
+        .context("Failed to delete secret")?;
+
+    if existed {
+        println!("Deleted {}.", variable);
+    } else {
+        eprintln!("Secret {} not found.", variable);
+        return Err(anyhow::anyhow!("Secret not found"));
+    }
+
+    Ok(())
+}
+
+pub fn run_with_env(
+    backend: &mut dyn SecretBackend,
+    env_vars: &[String],
+    no_save_missing: bool,
+    command_args: &[String],
+) -> Result<()> {
+    // Defensive: Validate inputs early and fail fast
+    if command_args.is_empty() {
+        return Err(anyhow::anyhow!("No command specified after --"));
+    }
+
+    // Defensive: Check if command exists and is not empty
+    if command_args[0].trim().is_empty() {
+        return Err(anyhow::anyhow!("Empty command specified"));
+    }
+
+    if !env_vars.is_empty() {
+        eprintln!("Injecting env vars: {:?}", env_vars);
+    }
+
+    let mut cmd = Command::new(&command_args[0]);
+    cmd.args(&command_args[1..]);
+
+    // Inject environment variables
+    for var in env_vars {
+        let secret = match backend.retrieve(var)? {
+            Some(secret) => secret,
+            None => {
+                // Secret not found, handle based on flags
+                if let Ok(mut test_secret) = env::var("LOCAL_SECRETS_TEST_SECRET") {
+                    // Test mode - use provided test secret
+                    eprintln!("Enter secret for missing {}: ", var);
+                    let secret = SecretString::new(test_secret.clone().into());
+                    test_secret.zeroize(); // Zero out the test secret from memory
+
+                    if !no_save_missing {
+                        backend.store(var, &secret)?;
+                        eprintln!("Stored secret for {}.", var);
+                    }
+
+                    secret
+                } else if env::var("LOCAL_SECRETS_TEST_MODE").is_ok() {
+                    // Test mode but no test secret provided - this should fail
+                    return Err(anyhow::anyhow!("Secret {} not found", var));
+                } else {
+                    // Production mode - prompt user
+                    eprint!("Enter secret for missing {}: ", var);
+                    let mut password =
+                        rpassword::read_password().context("Failed to read password")?;
+                    let secret = SecretString::new(password.clone().into());
+                    password.zeroize(); // Zero out the password from memory
+
+                    if !no_save_missing {
+                        backend.store(var, &secret)?;
+                        eprintln!("Stored secret for {}.", var);
+                    }
+
+                    secret
+                }
+            }
+        };
+
+        cmd.env(var, secret.expose_secret());
+    }
+
+    // Execute the command
+    let mut child = cmd.spawn().context("Failed to spawn child process")?;
+
+    let exit_status = child.wait().context("Failed to wait for child process")?;
+
+    // Defensive: Handle exit codes gracefully, never panic
+    if !exit_status.success() {
+        let code = exit_status.code().unwrap_or(1);
+        // Defensive: Ensure exit code is in valid range
+        let safe_code = if !(0..=255).contains(&code) { 1 } else { code };
+        std::process::exit(safe_code);
+    }
+
+    Ok(())
+}

@@ -31,15 +31,34 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
       - name: cargo fmt
         run: cargo fmt --all -- --check
-      - name: cargo clippy
+      - name: cargo clippy (strict)
         run: cargo clippy --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --all-targets
+      - name: Test CLI functionality
+        run: |
+          # Test help output
+          cargo run --release -- --help
+          cargo run --release -- store --help
+          cargo run --release -- delete --help
+
+  security-audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run security audit
+        run: cargo audit
 
   build-release:
     name: Build release binaries (${{ matrix.target }})
     if: startsWith(github.ref, 'refs/tags/')
-    needs: checks
+    needs: [checks, security-audit]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -170,8 +170,7 @@ fn delete_removes_secret_from_backend() -> Result<(), Box<dyn Error>> {
         .arg(&helper)
         .arg("CI_PAT");
 
-    run
-        .assert()
+    run.assert()
         .failure()
         .stderr(predicate::str::contains("Secret CI_PAT not found"));
 
