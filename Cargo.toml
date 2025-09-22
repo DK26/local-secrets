@@ -9,12 +9,12 @@ license = "GPL-3.0-only"
 [dependencies]
 anyhow = "1"
 clap = { version = "4.5", features = ["derive"] }
-keyring = "2"
+keyring = "3.6.3"
 rpassword = "7"
-secrecy = "0.8"
+secrecy = "0.10.3"
 zeroize = "1"
+mimalloc = { version = "0.1.48", features = ["secure"] }
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
-
