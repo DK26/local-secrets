@@ -1,0 +1,234 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # Build size-optimized binaries for release
+  build-release:
+    name: Build release binaries (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev
+      
+      - name: Build size-optimized release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        
+      - name: Verify binary size (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          BINARY_PATH="target/${{ matrix.target }}/release/local-secrets"
+          SIZE=$(stat -f%z "$BINARY_PATH" 2>/dev/null || stat -c%s "$BINARY_PATH")
+          echo "Binary size: $SIZE bytes ($(echo "scale=1; $SIZE/1024/1024" | bc)MB)"
+          # Alert if binary is unexpectedly large (>10MB)
+          if [ $SIZE -gt 10485760 ]; then
+            echo "⚠️ WARNING: Binary size is larger than expected"
+          else
+            echo "✅ Binary size is within expected range"
+          fi
+          
+      - name: Verify binary size (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $BinaryPath = "target/${{ matrix.target }}/release/local-secrets.exe"
+          $Size = (Get-Item $BinaryPath).Length
+          $SizeMB = [math]::Round($Size / 1MB, 1)
+          Write-Host "Binary size: $Size bytes ($SizeMB MB)"
+          if ($Size -gt 10485760) {
+            Write-Host "⚠️ WARNING: Binary size is larger than expected"
+          } else {
+            Write-Host "✅ Binary size is within expected range"
+          }
+
+      - name: Test release binary functionality
+        run: |
+          # Basic smoke tests for release binary
+          ./target/${{ matrix.target }}/release/local-secrets${{ matrix.os == 'windows-latest' && '.exe' || '' }} --help
+          ./target/${{ matrix.target }}/release/local-secrets${{ matrix.os == 'windows-latest' && '.exe' || '' }} store --help
+          ./target/${{ matrix.target }}/release/local-secrets${{ matrix.os == 'windows-latest' && '.exe' || '' }} delete --help
+        shell: bash
+
+      - name: Package tarball (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euxuo pipefail
+          BIN_NAME=local-secrets
+          TARGET_DIR=target/${{ matrix.target }}/release
+          DIST=dist
+          mkdir -p "$DIST"
+          
+          # Create tarball with binary and essential docs
+          ARCHIVE="$DIST/${BIN_NAME}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C "$TARGET_DIR" "$BIN_NAME" \
+            && tar -rzf "$ARCHIVE" README.md LICENSE
+          
+          # Verify archive contents
+          echo "Archive contents:"
+          tar -tzf "$ARCHIVE"
+          
+      - name: Package zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $BinName = "local-secrets"
+          $TargetDir = "target/${{ matrix.target }}/release"
+          $Dist = "dist"
+          New-Item -ItemType Directory -Path $Dist -Force | Out-Null
+          
+          # Create zip with binary and essential docs
+          $BinaryPath = Join-Path $TargetDir "$BinName.exe"
+          $TempDir = "temp-release"
+          New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+          
+          Copy-Item $BinaryPath $TempDir
+          Copy-Item "README.md" $TempDir
+          Copy-Item "LICENSE" $TempDir
+          
+          $Archive = Join-Path $Dist "$BinName-${{ matrix.target }}.zip"
+          Compress-Archive -Path "$TempDir\*" -DestinationPath $Archive -Force
+          
+          # Clean up temp directory
+          Remove-Item -Recurse -Force $TempDir
+          
+          # Verify archive contents
+          Write-Host "Archive contents:"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($Archive)
+          $zip.Entries | ForEach-Object { Write-Host "  $($_.Name)" }
+          $zip.Dispose()
+          
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  # Create GitHub release with all platform binaries
+  publish-release:
+    name: Publish GitHub release
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+          
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euxuo pipefail
+          cd release
+          
+          # Generate SHA256 checksums for all files
+          shasum -a 256 * > SHA256SUMS
+          
+          echo "Release files and checksums:"
+          ls -la
+          echo ""
+          echo "SHA256SUMS contents:"
+          cat SHA256SUMS
+          
+      - name: Extract release notes from tag
+        id: release_notes
+        shell: bash
+        run: |
+          # Extract version from tag
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Generate release notes
+          cat > release_notes.md << EOF
+          ## local-secrets $VERSION
+          
+          ### 🔐 Secure Secret Management CLI
+          
+          A minimalist CLI tool to securely store secrets in your OS keyring and inject them as environment variables into child processes.
+          
+          ### 📦 Installation
+          
+          Download the appropriate binary for your platform:
+          - **Linux**: \`local-secrets-x86_64-unknown-linux-gnu.tar.gz\`
+          - **macOS**: \`local-secrets-aarch64-apple-darwin.tar.gz\`
+          - **Windows**: \`local-secrets-x86_64-pc-windows-msvc.zip\`
+          
+          ### ✨ Key Features
+          
+          - 🔐 **Encryption at rest** — secrets stored in OS keyring (Credential Manager, Keychain, Secret Service)
+          - 🎯 **Explicit injection** — you choose exactly which variables to expose via \`--env\`
+          - 🚀 **No surprises** — everything after \`--\` is your binary + arguments
+          - 🛡️ **Safe defaults** — hidden prompts, memory zeroization, no plaintext files
+          - 📦 **Size optimized** — small, fast binary with minimal dependencies
+          
+          ### 🔒 Security
+          
+          - **Memory protection**: Secrets wrapped in \`SecretString\` with automatic zeroization
+          - **Input validation**: All inputs sanitized against injection attacks
+          - **No plaintext storage**: Secrets never stored in plain text files or logs
+          - **Comprehensive testing**: Extensive security-focused test suite
+          
+          ### 💻 Quick Start
+          
+          \`\`\`bash
+          # Store a secret
+          local-secrets store GITHUB_PAT
+          
+          # Use it in a command
+          local-secrets --env GITHUB_PAT -- curl -H "Authorization: token \$GITHUB_PAT" ...
+          
+          # Delete when done
+          local-secrets delete GITHUB_PAT
+          \`\`\`
+          
+          ### 🔍 Verification
+          
+          Verify the downloaded files using the provided SHA256SUMS:
+          \`\`\`bash
+          shasum -a 256 -c SHA256SUMS
+          \`\`\`
+          
+          ---
+          
+          **Full Documentation**: https://github.com/DK26/local-secrets
+          **Security Policy**: See SECURITY.md for reporting vulnerabilities
+          EOF
+          
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_notes.outputs.VERSION }}
+          name: "Release ${{ steps.release_notes.outputs.VERSION }}"
+          body_path: release_notes.md
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(steps.release_notes.outputs.VERSION, '-') }}
+          generate_release_notes: false  # We're providing custom notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

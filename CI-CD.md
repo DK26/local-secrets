@@ -1,25 +1,57 @@
-# CI/CD Pipeline
+# CI/CD Setup for local-secrets
 
-This repository uses GitHub Actions for continuous integration and continuous deployment.
+This document describes the comprehensive CI/CD pipeline for local-secrets, inspired by strict-path-rs patterns but adapted for our security-focused CLI tool.
 
-## 🔄 **Continuous Integration (CI) - Runs on Every Push**
+## 🏗️ CI/CD Architecture
 
-The CI pipeline runs automatically on:
-- Every push to `main` or `develop` branches  
-- Every pull request to `main`
+### GitHub Actions Workflows
 
-### Jobs Executed:
+#### 1. **Main CI Pipeline** (`.github/workflows/ci.yml`)
+- **Triggers**: Push to main, Pull Requests
+- **Multi-platform testing**: Ubuntu, Windows, macOS
+- **Security focus**: 
+  - UTF-8 encoding validation
+  - Memory backend testing with security restrictions
+  - Keyring backend availability testing
+  - Comprehensive security test suite
+- **Code quality**: Format checking, Clippy linting, documentation tests
+- **Features tested**: Both regular and `test-secret-param` feature
 
-1. **Lint & Test** (`checks`) - Multi-platform testing:
-   - **Platforms**: Ubuntu, macOS, Windows
-   - **Formatting**: `cargo fmt --check` (enforces code style)
-   - **Linting**: `cargo clippy -- -D warnings` (zero tolerance for warnings)
-   - **Testing**: `cargo test --all-targets` (comprehensive test suite)
-   - **CLI Validation**: Basic functionality tests
+#### 2. **Security Audit** (`.github/workflows/audit.yml`)
+- **Triggers**: Push/PR to main, Daily at 2 AM UTC, Manual dispatch
+- **Security scanning**: `cargo audit` for vulnerability detection
+- **Security validation**: Tests memory backend restrictions
+- **Artifact upload**: JSON audit results for analysis
 
-2. **Security Audit** (`security-audit`):
-   - **Vulnerability Scanning**: `cargo audit` (checks dependencies for known CVEs)
-   - **Blocks releases**: If security issues found
+#### 3. **Release Pipeline** (`.github/workflows/release.yml`)
+- **Triggers**: Version tags (`v*`)
+- **Multi-platform builds**: Linux, macOS, Windows
+- **Size optimization**: Uses our custom release profile settings
+- **Binary verification**: Size checks and smoke tests
+- **Release artifacts**: Compressed binaries with checksums
+- **Documentation**: Auto-generated release notes with security highlights
+
+### Local Development Scripts
+
+#### **PowerShell**: `ci-local.ps1`
+```powershell
+# Run all CI checks locally
+.\ci-local.ps1
+```
+
+#### **Bash**: `ci-local.sh` 
+```bash
+# Run all CI checks locally  
+./ci-local.sh
+```
+
+Both scripts provide:
+- **Auto-fixing**: Format and clippy issues
+- **UTF-8 validation**: Critical for cross-platform compatibility
+- **Security testing**: Full test suite with memory backend
+- **Documentation validation**: Doc tests and warnings
+- **Binary building**: Release-optimized builds
+- **Audit integration**: Security vulnerability scanning
 
 ## 🚀 **Continuous Deployment (CD) - Runs Only on Tags**
 
