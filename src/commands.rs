@@ -5,17 +5,51 @@ use std::process::Command;
 use zeroize::Zeroize;
 
 use crate::backend::SecretBackend;
+use crate::security::{validate_env_var_name, validate_secret_value};
 
 pub fn store(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
-    // Defensive: Validate variable name early
-    if variable.trim().is_empty() {
-        return Err(anyhow::anyhow!("Variable name cannot be empty"));
-    }
+    store_with_options(backend, variable, None)
+}
 
-    // Get the secret value
-    let secret = if let Ok(mut test_secret) = env::var("LOCAL_SECRETS_TEST_SECRET") {
-        // Test mode - use provided secret
+#[cfg(feature = "test-secret-param")]
+pub fn store_with_test_value(
+    backend: &mut dyn SecretBackend,
+    variable: &str,
+    test_secret: Option<&str>,
+) -> Result<()> {
+    store_with_options(backend, variable, test_secret)
+}
+
+fn store_with_options(
+    backend: &mut dyn SecretBackend,
+    variable: &str,
+    test_secret_override: Option<&str>,
+) -> Result<()> {
+    // Security: Validate variable name for injection attacks
+    validate_env_var_name(variable)?;
+
+    // Get the secret value using priority order:
+    // 1. test_secret_override parameter (test builds only)
+    // 2. LOCAL_SECRETS_TEST_SECRET environment variable
+    // 3. User input prompt
+    let secret = if let Some(test_value) = test_secret_override {
+        // Test mode via parameter - use provided secret
         eprintln!("Enter secret for {}: ", variable);
+
+        // Security: Validate secret value
+        validate_secret_value(test_value)?;
+
+        let mut test_value_copy = test_value.to_string();
+        let secret = SecretString::new(test_value_copy.clone().into());
+        test_value_copy.zeroize(); // Zero out the copy from memory
+        secret
+    } else if let Ok(mut test_secret) = env::var("LOCAL_SECRETS_TEST_SECRET") {
+        // Test mode via environment - use provided secret
+        eprintln!("Enter secret for {}: ", variable);
+
+        // Security: Validate secret value
+        validate_secret_value(&test_secret)?;
+
         let secret = SecretString::new(test_secret.clone().into());
         test_secret.zeroize(); // Zero out the test secret from memory
         secret
@@ -23,6 +57,10 @@ pub fn store(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
         // Production mode - prompt user
         eprint!("Enter secret for {}: ", variable);
         let mut password = rpassword::read_password().context("Failed to read password")?;
+
+        // Security: Validate secret value
+        validate_secret_value(&password)?;
+
         let secret = SecretString::new(password.clone().into());
         password.zeroize(); // Zero out the password from memory
         secret
@@ -38,10 +76,8 @@ pub fn store(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
 }
 
 pub fn delete(backend: &mut dyn SecretBackend, variable: &str) -> Result<()> {
-    // Defensive: Validate variable name early
-    if variable.trim().is_empty() {
-        return Err(anyhow::anyhow!("Variable name cannot be empty"));
-    }
+    // Security: Validate variable name for injection attacks
+    validate_env_var_name(variable)?;
 
     let existed = backend
         .delete(variable)
@@ -63,15 +99,8 @@ pub fn run_with_env(
     no_save_missing: bool,
     command_args: &[String],
 ) -> Result<()> {
-    // Defensive: Validate inputs early and fail fast
-    if command_args.is_empty() {
-        return Err(anyhow::anyhow!("No command specified after --"));
-    }
-
-    // Defensive: Check if command exists and is not empty
-    if command_args[0].trim().is_empty() {
-        return Err(anyhow::anyhow!("Empty command specified"));
-    }
+    // Security validation is now performed in main.rs before calling this function
+    // This is part of defense-in-depth strategy
 
     if !env_vars.is_empty() {
         eprintln!("Injecting env vars: {:?}", env_vars);
@@ -89,6 +118,10 @@ pub fn run_with_env(
                 if let Ok(mut test_secret) = env::var("LOCAL_SECRETS_TEST_SECRET") {
                     // Test mode - use provided test secret
                     eprintln!("Enter secret for missing {}: ", var);
+
+                    // Security: Validate secret value
+                    validate_secret_value(&test_secret)?;
+
                     let secret = SecretString::new(test_secret.clone().into());
                     test_secret.zeroize(); // Zero out the test secret from memory
 
@@ -106,6 +139,10 @@ pub fn run_with_env(
                     eprint!("Enter secret for missing {}: ", var);
                     let mut password =
                         rpassword::read_password().context("Failed to read password")?;
+
+                    // Security: Validate secret value
+                    validate_secret_value(&password)?;
+
                     let secret = SecretString::new(password.clone().into());
                     password.zeroize(); // Zero out the password from memory
 

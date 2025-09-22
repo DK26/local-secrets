@@ -9,8 +9,10 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 mod backend;
 mod commands;
+mod security;
 
 use backend::{KeyringBackend, MemoryBackend, SecretBackend};
+use security::validate_cli_security;
 
 #[derive(Parser)]
 #[command(name = "local-secrets")]
@@ -27,6 +29,11 @@ struct Cli {
     #[arg(long)]
     no_save_missing: bool,
 
+    /// Test-only parameter: Provide secret value for automated testing (only available in test builds)
+    #[cfg(feature = "test-secret-param")]
+    #[arg(long, hide = true)]
+    test_secret: Option<String>,
+
     /// Command and arguments to execute (everything after --)
     #[arg(last = true)]
     command_args: Vec<String>,
@@ -38,6 +45,10 @@ enum Commands {
     Store {
         /// Environment variable name
         variable: String,
+        /// Test-only parameter: Provide secret value for automated testing (only available in test builds)
+        #[cfg(feature = "test-secret-param")]
+        #[arg(long, hide = true)]
+        test_secret: Option<String>,
     },
     /// Delete a secret from the keyring  
     Delete {
@@ -59,18 +70,44 @@ fn run() -> Result<()> {
 
     // Determine which backend to use
     let mut backend: Box<dyn SecretBackend> = match env::var("LOCAL_SECRETS_BACKEND").as_deref() {
-        Ok("memory") => Box::new(MemoryBackend::new()?),
+        Ok("memory") => {
+            // SECURITY WARNING: Only allow memory backend in test contexts
+            if !cfg!(test) && env::var("LOCAL_SECRETS_TEST_MODE").is_err() {
+                eprintln!("🚨 SECURITY ERROR: MemoryBackend stores secrets in PLAINTEXT!");
+                eprintln!("🚨 This is extremely insecure and should NEVER be used in production!");
+                eprintln!("🚨 To use memory backend for testing, set LOCAL_SECRETS_TEST_MODE=1");
+                eprintln!("🚨 For secure storage, remove LOCAL_SECRETS_BACKEND or use 'keyring'.");
+                return Err(anyhow::anyhow!(
+                    "MemoryBackend rejected for security reasons"
+                ));
+            }
+            Box::new(MemoryBackend::new()?)
+        }
         _ => Box::new(KeyringBackend::new()),
     };
 
     match cli.command {
-        Some(Commands::Store { variable }) => {
-            commands::store(&mut *backend, &variable)?;
+        Some(Commands::Store {
+            variable,
+            #[cfg(feature = "test-secret-param")]
+            test_secret,
+        }) => {
+            #[cfg(feature = "test-secret-param")]
+            {
+                commands::store_with_test_value(&mut *backend, &variable, test_secret.as_deref())?;
+            }
+            #[cfg(not(feature = "test-secret-param"))]
+            {
+                commands::store(&mut *backend, &variable)?;
+            }
         }
         Some(Commands::Delete { variable }) => {
             commands::delete(&mut *backend, &variable)?;
         }
         None => {
+            // Security validation before execution
+            validate_cli_security(&cli.env, &cli.command_args)?;
+
             // Run mode - inject environment variables and execute command
             commands::run_with_env(
                 &mut *backend,

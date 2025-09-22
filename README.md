@@ -12,6 +12,24 @@ Designed to be **straight forward, easy to use, and secure** for local developme
 
 ---
 
+## 🔒 Security
+
+### Production Security
+- **Default backend:** Uses OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service)
+- **Memory protection:** Secrets wrapped in `SecretString` with automatic memory zeroization
+- **No plaintext storage:** Secrets never stored in plain text files or logs
+- **Input validation:** All inputs sanitized and validated against security threats
+
+### Development Testing
+For development and testing, a memory backend is available:
+```bash
+LOCAL_SECRETS_TEST_MODE=1 LOCAL_SECRETS_BACKEND=memory local-secrets store TEST_VAR
+```
+
+**⚠️ WARNING:** Memory backend stores secrets in **PLAINTEXT** temporary files and should **NEVER** be used in production. It's restricted to test contexts and requires explicit `LOCAL_SECRETS_TEST_MODE=1` activation.
+
+---
+
 ## ✨ Quick Start
 
 ### Install (from source)

@@ -78,8 +78,16 @@ pub struct MemoryBackend {
 
 impl MemoryBackend {
     pub fn new() -> Result<Self> {
-        // Use a fixed name for the memory backend so it persists across CLI invocations in tests
-        // In a real test environment, each test should run in isolation
+        // WARNING: MemoryBackend is ONLY for testing - stores secrets in plaintext!
+        // NEVER use LOCAL_SECRETS_BACKEND=memory in production!
+
+        // Verify this is only used in test contexts
+        if !cfg!(test) && std::env::var("LOCAL_SECRETS_TEST_MODE").is_err() {
+            eprintln!("⚠️  WARNING: MemoryBackend stores secrets in PLAINTEXT!");
+            eprintln!("⚠️  This should ONLY be used for testing, not production!");
+            eprintln!("⚠️  Use the default keyring backend for secure storage.");
+        }
+
         let mut temp_dir = std::env::temp_dir();
         temp_dir.push("local-secrets-memory-backend.json");
         Ok(Self {

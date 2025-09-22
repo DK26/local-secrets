@@ -6,6 +6,9 @@ authors = ["Local Secrets Contributors"]
 description = "Minimalist CLI to store secrets in your OS keyring and inject them into child processes"
 license = "GPL-3.0-only"
 
+[features]
+test-secret-param = []
+
 [dependencies]
 anyhow = { version = "1", default-features = false }
 clap = { version = "4.5", features = [
@@ -28,10 +31,12 @@ zeroize = { version = "1", default-features = false, features = ["alloc"] }
 mimalloc = { version = "0.1.48", features = [
     "secure",
 ], default-features = false }
+regex = "1.11.2"
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+tempfile = "3.22.0"
 
 # Size optimization profiles
 [profile.release]
