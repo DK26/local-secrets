@@ -1,32 +1,66 @@
 # local-secrets
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![CI](https://github.com/DK26/local-secrets/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DK26/local-secrets/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/DK26/local-secrets/actions/workflows/audit.yml/badge.svg?branch=main)](https://github.com/DK26/local-secrets/actions/workflows/audit.yml)
+[![Keyring Protected](https://img.shields.io/badge/protected%20by-OS%20Keyring-green.svg)](https://github.com/DK26/local-secrets)
 
-A **minimalist CLI tool** to securely **store secrets in your OS keyring** and inject them as environment variables into child processes.  
-Designed to be **straight forward, easy to use, and secure** for local development and CI/CD.
+**Minimalist CLI for secure secret management using OS keyring.**
 
-- 🔐 **Encryption at rest** — secrets are stored in the OS keyring (Credential Manager, Secret Service, Keychain).
-- 🎯 **Explicit injection** — you choose exactly which variables to expose via `--env`.
-- 🚀 **No surprises** — everything after `--` is your binary + arguments.
-- 🛡️ **Safe defaults** — hidden prompts, memory zeroization, no plaintext files.
+A simple tool to **store secrets in your OS keyring** and inject them as environment variables into child processes.  
+No plaintext files, no persistent environment variables, just secure storage and explicit injection.
 
----
+## 🚨 **Why Your Current Secret Management is Probably Broken**
 
-## 🔒 Security
-
-### Production Security
-- **Default backend:** Uses OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service)
-- **Memory protection:** Secrets wrapped in `SecretString` with automatic memory zeroization
-- **No plaintext storage:** Secrets never stored in plain text files or logs
-- **Input validation:** All inputs sanitized and validated against security threats
-
-### Development Testing
-For development and testing, a memory backend is available:
 ```bash
-LOCAL_SECRETS_TEST_MODE=1 LOCAL_SECRETS_BACKEND=memory local-secrets store TEST_VAR
+# ❌ This exposes secrets in shell history, process lists, and environment dumps
+export API_KEY="super_secret_key"
+my-app deploy
+
+# ❌ This stores secrets in plaintext files that get committed, copied, leaked
+echo "API_KEY=super_secret_key" > .env
+docker run --env-file .env my-app
+
+# ✅ This uses OS keyring and only injects to specific processes
+local-secrets --env API_KEY -- my-app deploy
 ```
 
-**⚠️ WARNING:** Memory backend stores secrets in **PLAINTEXT** temporary files and should **NEVER** be used in production. It's restricted to test contexts and requires explicit `LOCAL_SECRETS_TEST_MODE=1` activation.
+**The Problem**: Most developers store secrets in shell configs, `.env` files, or environment variables that persist across sessions.
+
+**The Solution**: Store secrets in OS keyring, inject only to specific processes.
+
+## ⚡ **Get Secure in 30 Seconds**
+
+```bash
+# 1. Store a secret (encrypted in OS keyring)
+local-secrets store API_KEY
+Enter secret for API_KEY: ********
+
+# 2. Use it securely (injected only into your process)  
+local-secrets --env API_KEY -- curl -H "Authorization: Bearer $API_KEY" api.example.com
+
+# 3. That's it - no plaintext files, no persistent environment variables
+```
+
+## 🛡️ **Security Features**
+
+- **🔐 OS Keyring Encryption** — Windows Credential Manager, macOS Keychain, Linux Secret Service
+- **🧠 Memory Safety** — `SecretString` with automatic memory zeroization, no plaintext in memory dumps  
+- **🎯 Explicit Injection** — You choose exactly which secrets to expose, when, and to what process
+- **🚫 Zero Plaintext Storage** — No config files, no environment persistence, no accidental leaks
+- **🛡️ Input Validation** — Protection against command injection, path traversal, and other attack vectors
+- **🔍 Input Validation Tests** — Test suite validates against common attack patterns
+
+## 🎯 **When to Use local-secrets**
+
+| Your Scenario                         | Use local-secrets | Why                                               |
+| ------------------------------------- | ----------------- | ------------------------------------------------- |
+| **Local development with API keys**   | ✅ Yes             | Secure storage, no accidental commits             |
+| **CI/CD secret injection**            | ✅ Yes             | Explicit injection, audit trail                   |
+| **Docker containers needing secrets** | ✅ Yes             | No plaintext files in images                      |
+| **Multi-environment deployments**     | ✅ Yes             | Environment-specific keyring isolation            |
+| **Team secret sharing**               | ❌ No              | Use dedicated secret management platforms         |
+| **Production server secrets**         | ❌ Maybe           | Consider HashiCorp Vault or cloud secret managers |
 
 ---
 
@@ -35,7 +69,7 @@ LOCAL_SECRETS_TEST_MODE=1 LOCAL_SECRETS_BACKEND=memory local-secrets store TEST_
 ### Install (from source)
 
 ```bash
-git clone https://github.com/yourname/local-secrets.git
+git clone https://github.com/DK26/local-secrets.git
 cd local-secrets
 cargo install --path .
 ```

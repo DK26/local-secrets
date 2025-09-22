@@ -67,35 +67,55 @@ fn local_secrets_cmd() -> Result<AssertCommand, Box<dyn Error>> {
 }
 
 #[test]
-fn store_then_run_injects_secret_from_memory_backend() -> Result<(), Box<dyn Error>> {
+fn store_then_run_injects_secret_from_keyring_backend() -> Result<(), Box<dyn Error>> {
     let helper = env_probe();
+
+    // Use unique variable name to avoid conflicts with keyring
+    let test_var = format!(
+        "CLI_TEST_GITHUB_PAT_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
 
     let mut store = local_secrets_cmd()?;
     store
-        .env(BACKEND_ENV, "memory")
+        .env_remove(BACKEND_ENV) // Use default keyring backend
         .env(TEST_SECRET_ENV, "super-secret-token")
         .arg("store")
-        .arg("GITHUB_PAT");
+        .arg(&test_var);
     store
         .assert()
         .success()
-        .stdout(predicate::str::contains("Stored secret for GITHUB_PAT"))
-        .stderr(predicate::str::contains("Enter secret for GITHUB_PAT"));
+        .stdout(predicate::str::contains(&format!(
+            "Stored secret for {}",
+            test_var
+        )))
+        .stderr(predicate::str::contains(&format!(
+            "Enter secret for {}",
+            test_var
+        )));
 
     let mut run = local_secrets_cmd()?;
-    run.env(BACKEND_ENV, "memory")
+    run.env_remove(BACKEND_ENV) // Use default keyring backend
         .env_remove(TEST_SECRET_ENV)
-        .args(["--env", "GITHUB_PAT", "--"])
+        .args(["--env", &test_var, "--"])
         .arg(&helper)
-        .arg("GITHUB_PAT");
+        .arg(&test_var);
 
-    let stderr_pred = predicate::str::contains("Injecting env vars: [\"GITHUB_PAT\"]")
+    let stderr_pred = predicate::str::contains(&format!("Injecting env vars: [\"{}\"]", test_var))
         .and(predicate::str::contains("Enter secret").not());
 
     run.assert()
         .success()
         .stdout(predicate::str::contains("super-secret-token"))
         .stderr(stderr_pred);
+
+    // Clean up - delete the test secret from keyring
+    let mut cleanup = local_secrets_cmd()?;
+    cleanup.env_remove(BACKEND_ENV).arg("delete").arg(&test_var);
+    let _ = cleanup.output(); // Best effort cleanup
 
     Ok(())
 }
@@ -104,30 +124,42 @@ fn store_then_run_injects_secret_from_memory_backend() -> Result<(), Box<dyn Err
 fn no_save_missing_requires_secret_each_time() -> Result<(), Box<dyn Error>> {
     let helper = env_probe();
 
+    // Use unique variable name
+    let test_var = format!(
+        "CLI_TEST_API_KEY_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
+
     let mut first = local_secrets_cmd()?;
     first
-        .env(BACKEND_ENV, "memory")
+        .env_remove(BACKEND_ENV) // Use default keyring backend
         .env(TEST_SECRET_ENV, "transient-1")
-        .args(["--env", "API_KEY", "--no-save-missing", "--"])
+        .args(["--env", &test_var, "--no-save-missing", "--"])
         .arg(&helper)
-        .arg("API_KEY");
+        .arg(&test_var);
 
     first
         .assert()
         .success()
         .stdout(predicate::str::contains("transient-1"))
-        .stderr(predicate::str::contains("Enter secret for missing API_KEY"));
+        .stderr(predicate::str::contains(&format!(
+            "Enter secret for missing {}",
+            test_var
+        )));
 
     let mut second = local_secrets_cmd()?;
     second
-        .env(BACKEND_ENV, "memory")
+        .env_remove(BACKEND_ENV) // Use default keyring backend
         .env(TEST_SECRET_ENV, "transient-2")
-        .args(["--env", "API_KEY", "--no-save-missing", "--"])
+        .args(["--env", &test_var, "--no-save-missing", "--"])
         .arg(&helper)
-        .arg("API_KEY");
+        .arg(&test_var);
 
-    let stderr_pred = predicate::str::contains("Enter secret for missing API_KEY")
-        .and(predicate::str::contains("Stored secret for API_KEY").not());
+    let stderr_pred = predicate::str::contains(&format!("Enter secret for missing {}", test_var))
+        .and(predicate::str::contains(&format!("Stored secret for {}", test_var)).not());
 
     second
         .assert()
@@ -139,40 +171,55 @@ fn no_save_missing_requires_secret_each_time() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn delete_removes_secret_from_backend() -> Result<(), Box<dyn Error>> {
+fn delete_removes_secret_from_keyring_backend() -> Result<(), Box<dyn Error>> {
     let helper = env_probe();
+
+    // Use unique variable name
+    let test_var = format!(
+        "CLI_TEST_CI_PAT_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    );
 
     let mut store = local_secrets_cmd()?;
     store
-        .env(BACKEND_ENV, "memory")
+        .env_remove(BACKEND_ENV) // Use default keyring backend
         .env(TEST_SECRET_ENV, "initial-token")
         .arg("store")
-        .arg("CI_PAT");
+        .arg(&test_var);
     store
         .assert()
         .success()
-        .stdout(predicate::str::contains("Stored secret for CI_PAT"));
+        .stdout(predicate::str::contains(&format!(
+            "Stored secret for {}",
+            test_var
+        )));
 
     let mut delete = local_secrets_cmd()?;
     delete
-        .env(BACKEND_ENV, "memory")
+        .env_remove(BACKEND_ENV) // Use default keyring backend
         .arg("delete")
-        .arg("CI_PAT");
+        .arg(&test_var);
     delete
         .assert()
         .success()
-        .stdout(predicate::str::contains("Deleted CI_PAT"));
+        .stdout(predicate::str::contains(&format!("Deleted {}", test_var)));
 
     let mut run = local_secrets_cmd()?;
-    run.env(BACKEND_ENV, "memory")
+    run.env_remove(BACKEND_ENV) // Use default keyring backend
         .env_remove(TEST_SECRET_ENV)
-        .args(["--env", "CI_PAT", "--"])
+        .args(["--env", &test_var, "--"])
         .arg(&helper)
-        .arg("CI_PAT");
+        .arg(&test_var);
 
     run.assert()
         .failure()
-        .stderr(predicate::str::contains("Secret CI_PAT not found"));
+        .stderr(predicate::str::contains(&format!(
+            "Secret {} not found",
+            test_var
+        )));
 
     Ok(())
 }

@@ -2,8 +2,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 /// Security validation functions for input sanitization and attack prevention
-/// Based on vulnerability research from similar tools and security best practices
-
+/// Based on vulnerability research from similar tools and security best practices.
 /// Validates environment variable names to prevent injection attacks and system compromise
 pub fn validate_env_var_name(name: &str) -> Result<()> {
     // Check for empty or whitespace-only names

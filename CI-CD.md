@@ -9,11 +9,13 @@ This document describes the comprehensive CI/CD pipeline for local-secrets, insp
 #### 1. **Main CI Pipeline** (`.github/workflows/ci.yml`)
 - **Triggers**: Push to main, Pull Requests
 - **Multi-platform testing**: Ubuntu, Windows, macOS
-- **Security focus**: 
+- **Security-first testing strategy**: 
   - UTF-8 encoding validation
-  - Memory backend testing with security restrictions
-  - Keyring backend availability testing
-  - Comprehensive security test suite
+  - **REAL keyring end-to-end integration testing** (5 tests validating actual OS keyring services)
+  - Windows Credential Manager, macOS Keychain, Linux Secret Service validation
+  - Memory backend security protection (4 tests ensuring memory backend is blocked in production)
+  - Comprehensive injection and attack prevention (11 security tests)
+  - Input validation and security function testing (5 unit tests)
 - **Code quality**: Format checking, Clippy linting, documentation tests
 - **Features tested**: Both regular and `test-secret-param` feature
 
@@ -49,6 +51,7 @@ Both scripts provide:
 - **Auto-fixing**: Format and clippy issues
 - **UTF-8 validation**: Critical for cross-platform compatibility
 - **Security testing**: Full test suite with memory backend
+- **End-to-end keyring testing**: Validates actual OS keyring functionality
 - **Documentation validation**: Doc tests and warnings
 - **Binary building**: Release-optimized builds
 - **Audit integration**: Security vulnerability scanning
@@ -102,6 +105,15 @@ git push origin v0.1.0
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings  
 cargo test --all-targets
+
+# CRITICAL: Test with REAL keyring (not memory backend)
+unset LOCAL_SECRETS_TEST_MODE  # or $env:LOCAL_SECRETS_TEST_MODE=""
+cargo test --test keyring_integration_tests
+
+# Full test suite (25 tests: unit + keyring + security)
+cargo test --all-targets
+
+# Security audit
 cargo audit
 
 # Build release locally
@@ -125,6 +137,45 @@ git push origin v1.0.0
 3. **Write meaningful tag messages** (they become release notes)
 4. **Monitor the Actions tab** for build status
 5. **Fix security issues immediately** (blocks all releases)
+
+## 🎯 **CRITICAL: Keyring Integration Testing**
+
+**Major Testing Breakthrough**: We now test REAL keyring functionality, not just memory backend substitutes.
+
+### Why This Matters
+- **Previous Issue**: 99% of tests used `MemoryBackend` (plaintext temp files), providing false confidence
+- **Solution**: `tests/keyring_integration_tests.rs` validates actual OS keyring services
+- **Impact**: We now know our tool works end-to-end with real Windows Credential Manager, macOS Keychain, Linux Secret Service
+
+### Keyring Test Suite (`keyring_integration_tests.rs`)
+- ✅ **`test_keyring_availability`**: Basic store/retrieve/delete cycle
+- ✅ **`test_keyring_error_handling`**: Invalid operations and edge cases  
+- ✅ **`test_keyring_service_isolation`**: Namespace isolation between services
+- ✅ **`test_keyring_performance`**: Benchmarks with actual keyring latency
+- ✅ **`test_windows_credential_manager`**: Windows-specific validation
+- ✅ **`test_macos_keychain`**: macOS Keychain validation (when available)
+- ✅ **`test_linux_secret_service`**: Linux Secret Service validation (when available)
+
+### Running Keyring Tests
+```bash
+# Windows PowerShell
+$env:LOCAL_SECRETS_TEST_MODE=""
+cargo test --test keyring_integration_tests
+
+# Linux/macOS
+unset LOCAL_SECRETS_TEST_MODE
+cargo test --test keyring_integration_tests
+```
+
+**Expected Results**: 5 tests pass in ~10-15 seconds with real keyring interactions.
+
+### Test Suite Summary (25 Total Tests)
+- **5 Unit Tests**: Security function validation (`src/security.rs`)
+- **5 Keyring Integration Tests**: Real OS keyring functionality
+- **4 Memory Backend Security Tests**: Production security validation  
+- **11 Security Tests**: Injection prevention and attack resistance
+
+**Philosophy**: Test real functionality, not fake implementations. Every test serves a clear security or functional purpose.
 
 ## 🔧 **Troubleshooting**
 

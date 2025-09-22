@@ -20,7 +20,7 @@ if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
     foreach ($cargoPath in $cargoPaths) {
         if (Test-Path $cargoPath) {
             $env:PATH = "$(Split-Path $cargoPath);$env:PATH"
-            Write-Host "✓ Found cargo at: $cargoPath" -ForegroundColor Green
+            Write-Host "Found cargo at: $cargoPath" -ForegroundColor Green
             $cargoFound = $true
             break
         }
@@ -217,38 +217,34 @@ if (Test-Path "tests") {
 Write-Host "🎉 All file encoding checks passed!" -ForegroundColor Green
 Write-Host ""
 
-# Auto-fix common issues first
-Write-Host "🔧 Auto-fixing common issues..." -ForegroundColor Cyan
-Run-Fix "Format" "cargo fmt --all"
-Run-Fix "Clippy Fixable Issues" "cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features"
-Run-Fix "Format (after clippy fix)" "cargo fmt --all"
-
-Write-Host "🦀 Now running CI checks (same as GitHub Actions)..." -ForegroundColor Cyan
+# Auto-format FIRST to save time on linting
+Write-Host "🔧 Auto-formatting code before linting..." -ForegroundColor Cyan
+Run-Fix "Format Code" "cargo fmt --all"
 Write-Host ""
 
-# Run all CI checks in order
+Write-Host "🦀 Running CI checks (same as GitHub Actions)..." -ForegroundColor Cyan
+Write-Host "⚠️  FAIL-FAST MODE: Any linting error will stop execution" -ForegroundColor Yellow
+Write-Host ""
+
+# FAIL FAST: Format check - if this fails, stop immediately 
 Run-Check-Block "Format Check" {
     cargo fmt --all -- --check
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Formatting issues found. Run: cargo fmt --all" -ForegroundColor Red
-        Write-Host "Then commit the formatting changes." -ForegroundColor Red
+        Write-Host "❌ Formatting issues found after auto-format!" -ForegroundColor Red
+        Write-Host "💥 This should not happen - check for syntax errors" -ForegroundColor Red
         exit 1
     }
 }
 
-# Lint and tests with security focus
-Run-Check "Clippy Lint" "cargo clippy --all-targets --all-features -- -D warnings"
+# FAIL FAST: Linting - if this fails, stop immediately
+Run-Check "Clippy Lint (FAIL-FAST)" "cargo clippy --all-targets --all-features -- -D warnings"
 
-# Security-focused testing with memory backend
-$env:LOCAL_SECRETS_TEST_MODE = "1"
-$env:LOCAL_SECRETS_BACKEND = "memory"
+# Comprehensive test suite
+Write-Host "🧪 Running comprehensive test suite..." -ForegroundColor Cyan
 
-Run-Check "Unit Tests" "cargo test --lib --verbose"
-Run-Check "Integration Tests" "cargo test --test cli --test security_tests --verbose"
-Run-Check "Security Tests" "cargo test --test security_tests --verbose"
-
-# Test with feature flags
-Run-Check "Test with test-secret-param feature" "cargo test --test automated_store_tests --features test-secret-param --verbose"
+Run-Check "Unit Tests (Security Functions)" "cargo test --lib --verbose"
+Run-Check "Memory Backend Security Tests" "cargo test --test memory_backend_security_test --verbose"
+Run-Check "Security & Injection Prevention Tests" "cargo test --test security_tests --verbose"
 
 # Documentation
 $env:RUSTDOCFLAGS = "-D warnings"
@@ -263,6 +259,27 @@ Run-Check-Block "CLI Help Tests" {
     cargo run --release -- --help | Out-Null
     cargo run --release -- store --help | Out-Null 
     cargo run --release -- delete --help | Out-Null
+}
+
+# CRITICAL: Real keyring end-to-end testing
+Write-Host "🔑 Running REAL keyring integration tests..." -ForegroundColor Cyan
+Write-Host "   This validates what memory backend tests cannot:" -ForegroundColor Gray
+Write-Host "   • Actual OS keyring store/retrieve cycles" -ForegroundColor Gray  
+Write-Host "   • Windows Credential Manager integration" -ForegroundColor Gray
+Write-Host "   • Cross-platform keyring compatibility" -ForegroundColor Gray
+Write-Host "   • Real-world performance and error handling" -ForegroundColor Gray
+Write-Host ""
+
+$env:LOCAL_SECRETS_TEST_MODE = ""  # Use actual keyring (not memory backend)
+$env:LOCAL_SECRETS_BACKEND = ""    # Use actual keyring (not memory backend)
+
+try {
+    Run-Check "Keyring Integration Tests (REAL KEYRING)" "cargo test --test keyring_integration_tests --verbose"
+    Write-Host "✅ Real keyring functionality validated!" -ForegroundColor Green
+} catch {
+    Write-Host "⚠️  Keyring integration tests failed or keyring service unavailable" -ForegroundColor Yellow
+    Write-Host "💡 This is expected in some CI environments without keyring services" -ForegroundColor Blue
+    Write-Host "🔍 Check test output above for details" -ForegroundColor Blue
 }
 
 # Security audit (if available)

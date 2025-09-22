@@ -157,27 +157,19 @@ jobs:
     - name: Build release binary (size optimized)
       run: cargo build --release
 
-    - name: Test keyring backend (Unix)
-      if: matrix.os != 'windows-latest'
-      run: |
-        echo "Testing keyring backend availability on ${{ matrix.os }}"
-        # Test that keyring backend can be created (will fail gracefully if no keyring service)
-        timeout 30 bash -c 'echo "test123" | cargo run -- store TEST_KEYRING_CHECK' || true
-        timeout 30 cargo run -- delete TEST_KEYRING_CHECK || true
+    - name: Run keyring integration tests
+      run: cargo test --test keyring_integration_tests --verbose
+      # Note: These tests gracefully handle environments without keyring services
+      # They validate actual keyring functionality when available
+      continue-on-error: true  # Don't fail CI if keyring unavailable (e.g., headless Linux)
       env:
-        LOCAL_SECRETS_TEST_MODE: ""  # Use actual keyring
-
-    - name: Test keyring backend (Windows)  
+        LOCAL_SECRETS_TEST_MODE: ""  # Use actual keyring, not memory backend
+        
+    - name: Test Windows Credential Manager (Windows only)
       if: matrix.os == 'windows-latest'
-      shell: pwsh
-      run: |
-        echo "Testing Windows Credential Manager backend"
-        # Windows should always have Credential Manager available
-        $env:LOCAL_SECRETS_TEST_SECRET="test123"
-        cargo run -- store TEST_KEYRING_CHECK
-        cargo run -- delete TEST_KEYRING_CHECK
+      run: cargo test --test keyring_integration_tests test_windows_credential_manager --verbose
       env:
-        LOCAL_SECRETS_TEST_MODE: ""  # Use actual keyring
+        LOCAL_SECRETS_TEST_MODE: ""
 
   docs:
     name: Documentation

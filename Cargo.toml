@@ -1,6 +1,6 @@
 [package]
 name = "local-secrets"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 authors = ["Local Secrets Contributors"]
 description = "Minimalist CLI to store secrets in your OS keyring and inject them into child processes"

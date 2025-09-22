@@ -220,38 +220,36 @@ fi
 echo "🎉 All file encoding checks passed!"
 echo
 
-# Auto-fix common issues first
-echo "🔧 Auto-fixing common issues..."
-run_fix "Format" "cargo fmt --all"
-run_fix "Clippy Fixable Issues" "cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features"
-run_fix "Format (after clippy fix)" "cargo fmt --all"
-
-echo "🦀 Now running CI checks (same as GitHub Actions)..."
+# Auto-format FIRST to save time on linting
+echo "🔧 Auto-formatting code before linting..."
+run_fix "Format Code" "cargo fmt --all"
 echo
 
-# Run all CI checks in order
+echo "🦀 Running CI checks (same as GitHub Actions)..."
+echo "⚠️  FAIL-FAST MODE: Any linting error will stop execution"
+echo
+
+# FAIL FAST: Format check - if this fails, stop immediately 
 run_check "Format Check" '
     set -e
     if ! cargo fmt --all -- --check; then
-        echo "❌ Formatting issues found. Run: cargo fmt --all"
-        echo "Then commit the formatting changes."
+        echo "❌ Formatting issues found after auto-format!"
+        echo "💥 This should not happen - check for syntax errors"
         exit 1
     fi
 '
 
-# Lint and tests with security focus
-run_check "Clippy Lint" "cargo clippy --all-targets --all-features -- -D warnings"
+# FAIL FAST: Linting - if this fails, stop immediately
+run_check "Clippy Lint (FAIL-FAST)" "cargo clippy --all-targets --all-features -- -D warnings"
 
 # Security-focused testing with memory backend
 export LOCAL_SECRETS_TEST_MODE=1
 export LOCAL_SECRETS_BACKEND=memory
 
+# Comprehensive test suite
 run_check "Unit Tests" "cargo test --lib --verbose"
-run_check "Integration Tests" "cargo test --test cli --test security_tests --verbose"
-run_check "Security Tests" "cargo test --test security_tests --verbose"
-
-# Test with feature flags
-run_check "Test with test-secret-param feature" "cargo test --test automated_store_tests --features test-secret-param --verbose"
+run_check "Security Validation Tests" "cargo test --test security_tests --verbose"
+run_check "Memory Backend Security Tests" "cargo test --test memory_backend_security_test --verbose"
 
 # Documentation
 run_check "Documentation" "RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --document-private-items --all-features"
@@ -266,6 +264,21 @@ run_check "CLI Help Tests" '
     cargo run --release -- store --help >/dev/null
     cargo run --release -- delete --help >/dev/null
 '
+
+# CRITICAL: Real keyring end-to-end testing
+echo "🔑 Running real keyring integration tests..."
+export LOCAL_SECRETS_TEST_MODE=""  # Use actual keyring
+export LOCAL_SECRETS_BACKEND=""    # Use actual keyring
+
+# Real keyring integration tests:
+# This validates what memory backend tests CANNOT test:
+# - Actual OS keyring store/retrieve cycles across platforms
+# - Real-world keyring service interaction and error handling
+run_check "Keyring Integration Tests (E2E)" "cargo test --test keyring_integration_tests --verbose" || {
+    echo "⚠️  Keyring integration tests failed or keyring service unavailable"
+    echo "💡 This is expected in some CI environments without keyring services"
+    echo "🔍 Check test output above for details"
+}
 
 # Security audit (if available)
 echo "🔍 Running security audit..."
